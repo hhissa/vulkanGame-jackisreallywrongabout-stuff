@@ -4,7 +4,7 @@
 #define EPSILON 0.0001
 #define MAX_STEPS 100
 #define MAX_DISTANCE 1000.0
-#define MIN_DISTANCE 0.1
+#define MIN_DISTANCE 0.0001
 precision highp float;
 precision highp int;
 
@@ -13,6 +13,7 @@ layout(location = 0) out vec4 outColor;
 layout(push_constant) uniform PushConstants {
     vec2 resolution;
     float time;
+    int state;
 } pc;
 
 struct Light {
@@ -62,39 +63,7 @@ float noise(vec3 x) {
         f.z
     );
 }
-///////////////////////////////////////////////////////////////////////////////////////
-// INIT FUNCTIONS //
 
-void initLight() {
-    light.position = vec3(0.0, 7.0, 0.0);
-    light.direction = vec3(0.0,0.0, -1.0);
-}
-
-void initRayout(out RayInfo ray) 
-{
-    vec2 uv = ( gl_FragCoord.xy / pc.resolution.xy ) * 2.0 - 1.0;  // [-1,1]
-    uv.y = -uv.y;
-    uv.x *= pc.resolution.x / pc.resolution.y;                        // aspect correction
-
-    ray.origin = vec3(0.0, -3.0, -2.0);
-
-    // Camera frame
-    vec3 forward = normalize(vec3(uv, 1.0));         // camera looks along this
-    vec3 worldUp = vec3(0.0, 1.0, 0.0);
-    vec3 right = normalize(cross(forward, worldUp));
-    vec3 up = cross(right, forward);
-
-    // Field of view
-    float fovRad = radians(1.0);                      // or pass cameraFov as uniform
-    float halfHeight = tan(fovRad / 2.0);
-    float halfWidth = halfHeight * (pc.resolution.x / pc.resolution.y);
-
-    // Ray in world space
-    ray.dir = normalize(forward + uv.x * halfWidth * right + uv.y * halfHeight * up);
-}
-
-///////////////////////////////////////////////////////////////////////////////////////
-// BOOLEAN OPERATORS (branchless, color-aware) //
 
 mat3 rotatey(float theta) {
     return mat3(vec3(cos(theta), 0.0, sin(theta)),
@@ -116,6 +85,41 @@ mat3 rotatez( float theta) {
     );
 }
 
+
+///////////////////////////////////////////////////////////////////////////////////////
+// INIT FUNCTIONS //
+
+void initLight() {
+    light.position = vec3(0.0, 4.0, 0.0);
+    light.direction = vec3(0.0,0.0, -1.0);
+}
+
+void initRayout(out RayInfo ray) 
+{
+    vec2 uv = ( gl_FragCoord.xy / pc.resolution.xy ) * 2.0 - 1.0;  // [-1,1]
+    uv.y = -uv.y;
+    uv.x *= pc.resolution.x / pc.resolution.y;                        // aspect correction
+
+    ray.origin = vec3(-2.0, 0.0, -1.0);
+
+    // Camera frame
+    vec3 forward = normalize(vec3(uv, 1.0));         // camera looks along this
+    vec3 worldUp = vec3(0.0, 1.0, 0.0);
+    vec3 right = normalize(cross(forward, worldUp));
+    vec3 up = cross(right, forward);
+
+    // Field of view
+    float fovRad = radians(1.0);                      // or pass cameraFov as uniform
+    float halfHeight = tan(fovRad / 2.0);
+    float halfWidth = halfHeight * (pc.resolution.x / pc.resolution.y);
+
+    // Ray in world space
+    ray.dir = normalize(forward + uv.x * halfWidth * right + uv.y * halfHeight * up);
+    ray.dir *= rotatex(1.0) * rotatey(0.4);
+}
+
+///////////////////////////////////////////////////////////////////////////////////////
+// BOOLEAN OPERATORS (branchless, color-aware) //
 // Union
 SDF opUnion(SDF a, SDF b) {
     float k = step(b.dist, a.dist);
@@ -373,46 +377,29 @@ SDF sdfEllipsoid(vec3 p, vec3 pos, mat3 rot, vec3 r, vec3 color) {
     return o;
 }
 
-  SDF map(vec3 p) {
+SDF map(vec3 p) {
     // Example primitives
 
     vec3 globalPos = vec3(0.0, 0.0, 0.0);
     //scene 1:
-    SDF roomGeometry    = sdfBox(p, vec3(0.0, 4.0, 0.0) + globalPos, mat3(1.0), vec3(10.0), vec3(1.2, 8.0, 8.0)); // blue
-    SDF roomhole1 = sdfBox(p, vec3(0.0, 4.0, 0.0) + globalPos, mat3(1.0), vec3(3.0, 9.0, 3.0), vec3(1.2, 8.0, 8.0));
+    SDF roomGeometry    = sdfBox(p, vec3(0.0, 4.0, 0.0) + globalPos, mat3(1.0), vec3(10.0), vec3(1.2, 1.0, 1.0)); // blue
+    SDF roomhole1 = sdfBox(p, vec3(0.0, 4.0, 0.0) + globalPos, mat3(1.0), vec3(3.0, 9.0, 3.0), vec3(1.2, 1.0, 1.0));
     roomGeometry = opSubtraction(roomhole1, roomGeometry);
 
-    roomGeometry.dist += noise(p*2.5) *0.04;
     SDF scene = roomGeometry;
 
     //add roof
 
+     SDF bed = sdfRoundBox(p, vec3(1.5, -5.0, 5.0) + globalPos, mat3(1.0), vec3(1.0, 0.5, 5.0), 0.1, vec3(1.0, 1.0, 1.0) * 3.0);
+    scene = opSmoothUnion(bed, scene, 0.1); 
 
-    SDF bed = sdfRoundBox(p, vec3(1.5, -5.0, 5.0) + globalPos, mat3(1.0), vec3(1.5, 0.5, 5.0), 0.1, vec3(2.4, 16.0, 16.0));
-    scene = opSmoothUnion(bed, scene, 0.0); 
 
-    vec3 personColor = vec3(0.3,0.5,0.5);
 
-    SDF blanket = sdfRoundBox(p, vec3(1.5, -4.5, 1.3) + globalPos, rotatey(0.1), vec3(1.3, 0.03, 1.3), 0.0, vec3(0.2, 0.2, 0.2));
-    scene = opUnion(blanket, scene);
-
-    SDF blob1 = sdfSphere(p, vec3(2.3 + 0.1*sin(pc.time), -4.5, 2.0) + globalPos, mat3(1.0), 0.3, personColor);
-    scene = opSmoothUnion(blob1, scene, 0.3);
-
-    SDF blob2 = sdfSphere(p, vec3(1.5 + 0.1*sin(2.0*pc.time), -4.5, 1.0) + globalPos, mat3(1.0), 0.4, personColor);
-    scene = opSmoothUnion(blob2, scene, 0.3);
-
-    SDF blob3 = sdfSphere(p, vec3(2.3+ 0.1*sin(pc.time), -4.5, 0.7) + globalPos, mat3(1.0), 0.3, personColor);
-    scene = opSmoothUnion(blob3, scene, 0.3);
-
-    SDF blob4 = sdfSphere(p, vec3(1.9+ 0.1*sin(pc.time), -4.5, 0.5) + globalPos, mat3(1.0), 0.4, personColor);
-    scene = opSmoothUnion(blob4, scene, 0.3);
-
-    SDF endtable = sdfCappedCylinder(p, vec3(-1.4, -4.0, 3.0) + globalPos, rotatex(1.6), 1.0, 0.5, vec3(1.2, 8.0, 8.0));
+    SDF endtable = sdfCappedCylinder(p, vec3(-1.4, -4.0, 3.0) + globalPos, rotatex(1.6), 1.0, 0.5, vec3(1.2, 1.0, 1.0));
     SDF cutout = sdfBox(p, vec3(-1.4, -3.0, 3.0) + globalPos, mat3(1.0), vec3(1.2), vec3(1.2, 8.0, 8.0));
     endtable = opSubtraction(cutout, endtable);
     scene = opUnion(endtable, scene);
-
+   
   //add fan and animate 
   //add person
 
@@ -449,7 +436,7 @@ float calcShadow(in vec3 ro, in vec3 rd, float k) {
         res = min(res, s);
         res = mix(res, s, 0.2);
 
-        t += h;
+        t += clamp(h, 0.02, 0.25);
     }
 
     return clamp(res, 0.0, 1.0);
@@ -482,14 +469,14 @@ void calcLighting(inout vec3 color, in vec3 p, in vec3 norm)
    vec3 indirectDir = normalize(-L * vec3(1.0, 0.0, 1.0));
    float indirectLighting = clamp(dot(norm, indirectDir), 0.0, 1.0);
 
-    vec3 lin = sunLighting * vec3(5.64, 1.27, 0.99)
+    vec3 lin = sunLighting * vec3(0.64, 1.27, 0.99)
              * pow(vec3(sha), vec3(1.0, 1.2, 1.5));
 
-    lin += skyLighting * vec3(1.16, 0.20, 0.28) * occ;
+    lin += skyLighting * vec3(0.16, 0.20, 0.28) * occ;
     lin += indirectLighting * vec3(0.40, 0.28, 0.20) * occ;
 
     float distance = length(light.position - p);
-    float radius = 2.0;
+    float radius = 10.0;
 
     float attenuation = radius / (radius + distance * distance);
 
@@ -542,7 +529,5 @@ void main() {
     initRayout(ray);
     initLight();
     draw(color, ray);
-    color *= 1.3;                  // exposure
-    color.xyz *= dot(color.xyz, vec3(0.2126, 0.7152, 0.0722)) + 0.2;
     outColor = color;
 }

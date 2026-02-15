@@ -536,7 +536,7 @@ private:
     VkPushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(float) * 3;
+    pushConstantRange.size = 16;
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
     if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr,
@@ -774,11 +774,13 @@ private:
     struct PushConstants {
       float resolution[2];
       float time;
+      int state;
     } pc;
 
     pc.resolution[0] = (float)swapChainExtent.width;
     pc.resolution[1] = (float)swapChainExtent.height;
     pc.time = glfwGetTime();
+    pc.state = 1;
 
     vkCmdPushConstants(commandBuffer, pipelineLayout,
                        VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants),
