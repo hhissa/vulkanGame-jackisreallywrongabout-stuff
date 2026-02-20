@@ -6,7 +6,8 @@
 #include <GLFW/glfw3native.h>
 
 #include <algorithm> // Necessary for std::clamp
-#include <cstdint>   // Necessary for uint32_t
+#include <chrono>
+#include <cstdint> // Necessary for uint32_t
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -16,6 +17,9 @@
 #include <set>
 #include <stdexcept>
 #include <vector>
+
+#include "TextRenderer.h"
+#include "TextSystem.cpp"
 
 const uint32_t WIDTH = 1980;
 const uint32_t HEIGHT = 1020;
@@ -120,7 +124,12 @@ private:
   std::vector<VkSemaphore> renderFinishedSemaphores;
   std::vector<VkFence> inFlightFences;
 
+  TextRenderer textRenderer;
   bool framebufferResized = false;
+
+  std::chrono::steady_clock::time_point lastKeyTime;
+
+  QASession qa;
 
   void initWindow() {
     glfwInit();
@@ -146,11 +155,15 @@ private:
     pickPhysicalDevice();
     createLogicalDevice();
     createSwapChain();
+
     createImageViews();
     createRenderPass();
     createGraphicsPipeline();
     createFramebuffers();
     createCommandPool();
+    textRenderer.init(device, physicalDevice, commandPool, graphicsQueue,
+                      "./font.ttf", 32.0f);
+    textRenderer.createPipeline(renderPass, swapChainExtent);
     createCommandBuffer();
     createSyncObjects();
   }
@@ -158,6 +171,23 @@ private:
   void mainLoop() {
     while (!glfwWindowShouldClose(window)) {
       glfwPollEvents();
+      auto now = std::chrono::steady_clock::now();
+      auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                         now - lastKeyTime)
+                         .count();
+
+      if (elapsed >= 1000) {
+        if (glfwGetKey(window, GLFW_KEY_1) == GLFW_PRESS) {
+          lastKeyTime = now;
+          qa.advance();
+        } else if (glfwGetKey(window, GLFW_KEY_2) == GLFW_PRESS) {
+          lastKeyTime = now;
+          qa.advance();
+        } else if (glfwGetKey(window, GLFW_KEY_3) == GLFW_PRESS) {
+          lastKeyTime = now;
+          qa.advance();
+        }
+      }
       drawFrame();
     }
 
@@ -177,6 +207,7 @@ private:
         framebufferResized) {
       framebufferResized = false;
       recreateSwapChain();
+      return;
     } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
       throw std::runtime_error("failed to acquire swap chain image!");
     }
@@ -229,6 +260,7 @@ private:
 
   void cleanup() {
     cleanupSwapChain();
+    textRenderer.cleanup();
 
     vkDestroyPipeline(device, graphicsPipeline, nullptr);
     vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
@@ -780,13 +812,24 @@ private:
     pc.resolution[0] = (float)swapChainExtent.width;
     pc.resolution[1] = (float)swapChainExtent.height;
     pc.time = glfwGetTime();
-    pc.state = 1;
+    pc.state = qa.getCurrentIndex();
 
     vkCmdPushConstants(commandBuffer, pipelineLayout,
                        VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants),
                        &pc);
 
     vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+
+    float textColor[4] = {1.0f, 1.0f, 1.0f, 1.0f}; // White color
+    textRenderer.beginBatch();
+    textRenderer.addText(qa.getCurrentPrompt(), 100.0f, 100.0f, 2.0f,
+                         textColor);
+    textRenderer.addText(qa.getAnswer(0), 100.0f, 200.0f, 1.0f, textColor);
+    textRenderer.addText(qa.getAnswer(1), 100.0f, 300.0f, 1.0f, textColor);
+    textRenderer.addText(qa.getAnswer(2), 100.0f, 400.0f, 1.0f, textColor);
+
+    // add as many as you want...
+    textRenderer.endBatch(commandBuffer);
     vkCmdEndRenderPass(commandBuffer);
     if (vkEndCommandBuffer(commandBuffer) != VK_SUCCESS) {
       throw std::runtime_error("failed to record command buffer!");

@@ -99,7 +99,12 @@ void initRayout(out RayInfo ray)
   uv.y = -uv.y;
   uv.x *= pc.resolution.x / pc.resolution.y; // aspect correction
 
-  ray.origin = vec3(-2.0, -2.0, 0.0);
+  if (pc.state == 1)
+  {
+    ray.origin = vec3(-2.0, -2.0, 0.0);
+  } else {
+    ray.origin = vec3(-2.0, -1.0, 0.0);
+  }
 
   // Camera frame
   vec3 forward = normalize(vec3(uv, 1.0)); // camera looks along this
