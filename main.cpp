@@ -130,6 +130,8 @@ private:
   std::chrono::steady_clock::time_point lastKeyTime;
 
   QASession qa;
+  float sceneStartTime = 0.0f;
+  int lastState = -1;
 
   void initWindow() {
     glfwInit();
@@ -187,6 +189,13 @@ private:
           lastKeyTime = now;
           qa.advance();
         }
+      }
+      int currentState = qa.getCurrentIndex();
+      float currentTime = glfwGetTime();
+
+      if (currentState != lastState) {
+        sceneStartTime = currentTime;
+        lastState = currentState;
       }
       drawFrame();
     }
@@ -568,7 +577,7 @@ private:
     VkPushConstantRange pushConstantRange{};
     pushConstantRange.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     pushConstantRange.offset = 0;
-    pushConstantRange.size = 16;
+    pushConstantRange.size = 20;
     pipelineLayoutInfo.pushConstantRangeCount = 1;
     pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
     if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr,
@@ -806,6 +815,7 @@ private:
     struct PushConstants {
       float resolution[2];
       float time;
+      float starttime;
       int state;
     } pc;
 
@@ -813,6 +823,7 @@ private:
     pc.resolution[1] = (float)swapChainExtent.height;
     pc.time = glfwGetTime();
     pc.state = qa.getCurrentIndex();
+    pc.starttime = sceneStartTime;
 
     vkCmdPushConstants(commandBuffer, pipelineLayout,
                        VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants),
@@ -821,12 +832,13 @@ private:
     vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
     float textColor[4] = {1.0f, 1.0f, 1.0f, 1.0f}; // White color
+    float titleColor[4] = {0.5f, 0.5f, 0.0f, 1.0f};
     textRenderer.beginBatch();
-    textRenderer.addText(qa.getCurrentPrompt(), 100.0f, 100.0f, 2.0f,
-                         textColor);
-    textRenderer.addText(qa.getAnswer(0), 100.0f, 200.0f, 1.0f, textColor);
-    textRenderer.addText(qa.getAnswer(1), 100.0f, 300.0f, 1.0f, textColor);
-    textRenderer.addText(qa.getAnswer(2), 100.0f, 400.0f, 1.0f, textColor);
+    textRenderer.addText(qa.getCurrentPrompt(), 100.0f, 800.0f, 2.0f,
+                         titleColor);
+    textRenderer.addText(qa.getAnswer(0), 100.0f, 850.0f, 1.0f, textColor);
+    textRenderer.addText(qa.getAnswer(1), 100.0f, 900.0f, 1.0f, textColor);
+    textRenderer.addText(qa.getAnswer(2), 100.0f, 950.0f, 1.0f, textColor);
 
     // add as many as you want...
     textRenderer.endBatch(commandBuffer);

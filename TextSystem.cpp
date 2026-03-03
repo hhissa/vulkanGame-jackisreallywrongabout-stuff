@@ -12,14 +12,19 @@ class QASession {
 public:
   QASession() : m_currentIndex(0) {
     m_questions = {
-        {"What is the capital of France?", {"Berlin", "Paris", "Madrid"}},
-        {"How many sides does a triangle have?", {"Four", "Five", "Three"}},
-        {"What is the largest planet in our solar system?",
-         {"Saturn", "Jupiter", "Neptune"}},
-        {"What is the chemical symbol for water?", {"CO2", "O2", "H2O"}},
-        {"Who wrote Romeo and Juliet?",
-         {"Charles Dickens", "William Shakespeare", "Jane Austen"}},
-
+        {"Wake up", {"...", "Why are you back?", "The answer is still no."}},
+        {"You are in pain.",
+         {"It'll get better.", "I deserve it.", "and so what"}},
+        {"Let me tell you the terms again.",
+         {"No.", "Leave.", "Just stop it."}},
+        {"Do you want to talk instead?",
+         {"I just wanna die.", "I can't speak anymore.", "..."}},
+        {"Do you want this problem solved?",
+         {"Yes. But I'm afraid.",
+          "Yes. But I still believe it will get better.",
+          "Yes. but I can't let go"}},
+        {"Wake up", {"...", "Why are you back?", "The answer is still no."}},
+        {"Wake up", {"...", "Why are you back?", "The answer is still no."}},
         // Add more questions here:
         // { "Your prompt?", { "Answer A", "Answer B", "Answer C" } },
     };

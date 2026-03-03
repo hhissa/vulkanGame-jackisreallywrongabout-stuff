@@ -2,7 +2,7 @@
 #version 450
 
 #define EPSILON 0.0001
-#define MAX_STEPS 100
+#define MAX_STEPS 500
 #define MAX_DISTANCE 1000.0
 #define MIN_DISTANCE 0.0001
 precision highp float;
@@ -13,6 +13,7 @@ layout(location = 0) out vec4 outColor;
 layout(push_constant) uniform PushConstants {
   vec2 resolution;
   float time;
+  float starttime;
   int state;
 } pc;
 
@@ -89,37 +90,8 @@ mat3 rotatez(float theta) {
 // INIT FUNCTIONS //
 
 void initLight() {
-  light.position = vec3(0.0, 4.0, 0.0);
+  light.position = vec3(0.0, 0.0, 0.0);
   light.direction = vec3(0.0, 0.3, -1.0);
-}
-
-void initRayout(out RayInfo ray)
-{
-  vec2 uv = (gl_FragCoord.xy / pc.resolution.xy) * 2.0 - 1.0; // [-1,1]
-  uv.y = -uv.y;
-  uv.x *= pc.resolution.x / pc.resolution.y; // aspect correction
-
-  if (pc.state == 1)
-  {
-    ray.origin = vec3(-2.0, -2.0, 0.0);
-  } else {
-    ray.origin = vec3(-2.0, -1.0, 0.0);
-  }
-
-  // Camera frame
-  vec3 forward = normalize(vec3(uv, 1.0)); // camera looks along this
-  vec3 worldUp = vec3(0.0, 1.0, 0.0);
-  vec3 right = normalize(cross(forward, worldUp));
-  vec3 up = cross(right, forward);
-
-  // Field of view
-  float fovRad = radians(1.0); // or pass cameraFov as uniform
-  float halfHeight = tan(fovRad / 2.0);
-  float halfWidth = halfHeight * (pc.resolution.x / pc.resolution.y);
-
-  // Ray in world space
-  ray.dir = normalize(forward + uv.x * halfWidth * right + uv.y * halfHeight * up);
-  ray.dir *= rotatex(0.7) * rotatey(0.4);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -395,43 +367,208 @@ SDF sdfEllipsoid(vec3 p, vec3 pos, mat3 rot, vec3 r, vec3 color) {
   return o;
 }
 
+void initRayout(out RayInfo ray)
+{
+  vec2 uv = (gl_FragCoord.xy / pc.resolution.xy) * 2.0 - 1.0; // [-1,1]
+  uv.y = -uv.y;
+  uv.x *= pc.resolution.x / pc.resolution.y; // aspect correction
+  mat3 camRot = mat3(1.0);
+  ray.origin = vec3(-2.0, -2.0, 0.0);
+
+  if (pc.state <= 2) {
+    ray.origin = vec3(-2.0, -2.0, 0.0);
+    camRot = rotatex(0.7) * rotatey(0.4);
+  } else if (pc.state == 3) {
+    ray.origin = vec3(1.0, -3.5, 0.0);
+    camRot = mat3(1.0);
+  } else if (pc.state == 4) {
+    ray.origin = vec3(2.0, -3.5, 2.0);
+    camRot = rotatey(-1.6);
+  } else if (pc.state == 5) {
+    ray.origin = vec3(0.0, 0.0, -2.0);
+    camRot = mat3(1.0);
+  } else if (pc.state >= 6) {
+    ray.origin = vec3(0.0, 0.0, -2.0 - smoothstep(0.0, 10.0, pc.time - pc.starttime) * 10.0);
+    camRot = mat3(1.0);
+  }
+
+  // Camera frame
+  vec3 forward = normalize(vec3(uv, 1.0)); // camera looks along this
+  vec3 worldUp = vec3(0.0, 1.0, 0.0);
+  vec3 right = normalize(cross(forward, worldUp));
+  vec3 up = cross(right, forward);
+
+  // Field of view
+  float fovRad = radians(1.0); // or pass cameraFov as uniform
+  float halfHeight = tan(fovRad / 2.0);
+  float halfWidth = halfHeight * (pc.resolution.x / pc.resolution.y);
+
+  // Ray in world space
+  ray.dir = normalize(forward + uv.x * halfWidth * right + uv.y * halfHeight * up);
+  ray.dir *= camRot;
+}
+
 SDF map(vec3 p) {
   // Example primitives
 
   vec3 globalPos = vec3(0.0, 0.0, 0.0);
   //scene 1:
+  if (pc.state < 5)
+  {
+    vec3 roomPos = vec3(0.0, 4.0, 0.0);
+    vec3 roomSize = vec3(10.0);
+    vec3 roomColor = vec3(1.2, 1.0, 1.0);
+    SDF roomGeometry = sdfBox(p, roomPos + globalPos, mat3(1.0), roomSize, roomColor); // blue
 
-  vec3 roomPos = vec3(0.0, 4.0, 0.0);
-  vec3 roomSize = vec3(10.0);
-  vec3 roomColor = vec3(1.2, 1.0, 1.0);
-  SDF roomGeometry = sdfBox(p, roomPos + globalPos, mat3(1.0), roomSize, roomColor); // blue
+    roomSize = vec3(3.0, 9.0, 3.0);
+    SDF roomHole = sdfBox(p, roomPos + globalPos, mat3(1.0), roomSize, roomColor);
+    roomGeometry = opSubtraction(roomHole, roomGeometry);
 
-  roomSize = vec3(3.0, 9.0, 3.0);
-  SDF roomHole = sdfBox(p, roomPos + globalPos, mat3(1.0), roomSize, roomColor);
-  roomGeometry = opSubtraction(roomHole, roomGeometry);
+    SDF scene = roomGeometry;
 
-  SDF scene = roomGeometry;
+    //bed
+    vec3 bedPos = vec3(1.5, -5.0, 5.0);
+    vec3 bedSize = vec3(1.0, 0.5, 5.0);
+    vec3 bedColor = vec3(1.0, 1.0, 1.0) * 2.0;
+    SDF bed = sdfRoundBox(p, bedPos + globalPos, mat3(1.0), bedSize, 0.1, bedColor);
 
-  //bed
-  vec3 bedPos = vec3(1.5, -5.0, 5.0);
-  vec3 bedSize = vec3(1.0, 0.5, 5.0);
-  vec3 bedColor = vec3(1.0, 1.0, 1.0) * 2.0;
-  SDF bed = sdfRoundBox(p, bedPos + globalPos, mat3(1.0), bedSize, 0.1, bedColor);
+    vec3 rimPos = vec3(1.5, -4.5, 1.55);
+    SDF bedRim = sdfRoundedBoxFrame(p, rimPos + globalPos, mat3(1.0), vec3(0.95, 0.0, 1.44), 0.0, 0.02, bedColor);
+    bed = opSmoothUnion(bed, bedRim, 0.03);
+    scene = opUnion(bed, scene);
 
-  vec3 rimPos = vec3(1.5, -4.5, 1.55);
-  SDF bedRim = sdfRoundedBoxFrame(p, rimPos + globalPos, mat3(1.0), vec3(0.95, 0.0, 1.44), 0.0, 0.02, bedColor);
-  bed = opSmoothUnion(bed, bedRim, 0.03);
-  scene = opUnion(bed, scene);
+    //end table
+    vec3 endTablePos = vec3(-1.4, -4.0, 3.0);
+    vec3 cutoutPos = endTablePos + vec3(0.0, 1.0, 0.0);
+    SDF endtable = sdfCappedCylinder(p, endTablePos + globalPos, rotatex(1.6), 1.0, 0.5, roomColor * 1.2);
+    SDF cutout = sdfBox(p, cutoutPos + globalPos, mat3(1.0), vec3(1.2), vec3(1.2, 1.0, 1.0));
+    endtable = opSubtraction(cutout, endtable);
+    scene = opUnion(endtable, scene);
 
-  //end table
-  vec3 endTablePos = vec3(-1.4, -4.0, 3.0);
-  vec3 cutoutPos = endTablePos + vec3(0.0, 1.0, 0.0);
-  SDF endtable = sdfCappedCylinder(p, endTablePos + globalPos, rotatex(1.6), 1.0, 0.5, roomColor * 1.2);
-  SDF cutout = sdfBox(p, cutoutPos + globalPos, mat3(1.0), vec3(1.2), vec3(1.2, 1.0, 1.0));
-  endtable = opSubtraction(cutout, endtable);
-  scene = opUnion(endtable, scene);
+    //mask
+    vec3 maskPos = vec3(0.0, -3.5, 2.0);
+    maskPos.y += sin(pc.time) * 0.1;
+    vec3 maskEllipseSize = vec3(0.3, 0.4, 0.23);
+    vec3 maskColor = vec3(1.3, 355.0 / 255.0, 355.0 / 255.0);
+    vec3 accentColor = vec3(0.0, 0.0, 0.0);
+    SDF maskEllipse1 = sdfEllipsoid(p, vec3(0.0, 0.0, 0.0) + maskPos + globalPos, mat3(1.0), maskEllipseSize, maskColor);
+    SDF maskEllipse2 = sdfEllipsoid(p, vec3(-0.13, 0.0, 0.0) + maskPos + globalPos, mat3(1.0), maskEllipseSize, maskColor);
 
-  return scene;
+    SDF mask = maskEllipse1;
+
+    vec3 headSize = vec3(0.25, 0.28, 0.2);
+    SDF head = sdfEllipsoid(p, vec3(0.1, 0.1, 0.0) + maskPos + globalPos, mat3(1.0), headSize, maskColor);
+    mask = opSmoothUnion(head, mask, 0.05);
+
+    vec3 chinSize = vec3(0.25, 0.28, 0.2) - p.x * vec3(0.0, 0.0, 0.1);
+    SDF chin = sdfEllipsoid(p, vec3(0.1, -0.1, 0.0) + maskPos + globalPos, mat3(1.0), chinSize, maskColor);
+    mask = opSmoothUnion(chin, mask, 0.05);
+
+    vec3 eyeBagSize = vec3(0.03, 0.06, 0.03);
+    vec3 mirrorP = p;
+    mirrorP.z = abs(mirrorP.z - (maskPos.z + globalPos.z))
+        + (maskPos.z + globalPos.z);
+    SDF eyeBag = sdfEllipsoid(mirrorP, vec3(0.35, 0.0, 0.1) + maskPos + globalPos, rotatez(-0.3), eyeBagSize, accentColor);
+    mask = opSmoothSubtraction(eyeBag, mask, 0.1);
+
+    vec3 eyeHoleSize = vec3(0.06, 0.02, 0.04);
+    mirrorP = p;
+    mirrorP.z = abs(mirrorP.z - (maskPos.z + globalPos.z))
+        + (maskPos.z + globalPos.z);
+    SDF eyeHole = sdfEllipsoid(mirrorP, vec3(0.25, 0.05, 0.08) + maskPos + globalPos, rotatez(-0.6), eyeHoleSize, maskColor);
+    mask = opSmoothSubtraction(eyeHole, mask, 0.05);
+
+    vec3 noseBridgeSize = vec3(0.02, 0.02, 0.12);
+    SDF noseBridge = sdfRoundedCylinder(p, vec3(0.33, 0.0, 0.0) + maskPos + globalPos, rotatez(0.5), noseBridgeSize.x, noseBridgeSize.y, noseBridgeSize.z, maskColor);
+    mask = opSmoothUnion(noseBridge, mask, 0.05);
+
+    vec3 nostrilSize = vec3(0.02, 0.02, 0.02);
+    mirrorP = p;
+    mirrorP.z = abs(mirrorP.z - (maskPos.z + globalPos.z))
+        + (maskPos.z + globalPos.z);
+    SDF nostril = sdfEllipsoid(mirrorP, vec3(0.35, -0.09, 0.03) + maskPos + globalPos, rotatez(-0.3), nostrilSize, maskColor);
+    mask = opSmoothUnion(nostril, mask, 0.02);
+
+    mask = opSmoothSubtraction(maskEllipse2, mask, 0.1);
+    scene = opUnion(mask, scene);
+
+    //bed and person
+    vec3 blanketPos = vec3(1.5, -4.5, 1.0);
+    vec3 blanketSize = vec3(1.0, 0.1, 1.0);
+    vec3 blanketColor = bedColor * 0.3;
+    SDF blanket = sdfRoundBox(p, blanketPos + globalPos, mat3(1.0), blanketSize, 0.1, blanketColor);
+    scene = opSmoothUnion(blanket, scene, 0.1);
+
+    vec3 torsoSize = vec3(0.2, 0.1, 0.4);
+    SDF torso = sdfRoundedCylinder(p, vec3(0.0, 0.1, 0.0) + blanketPos + globalPos, rotatez(1.6) * rotatey(1.3), torsoSize.x, torsoSize.y, torsoSize.z, blanketColor);
+    scene = opSmoothUnion(torso, scene, 0.1);
+
+    vec3 upperLegSize = vec3(0.1, 0.1, 0.4);
+    SDF upperLeg = sdfRoundedCylinder(p, vec3(-0.2, 0.1, -0.2) + blanketPos + globalPos, rotatez(1.6) * rotatey(0.5), upperLegSize.x, upperLegSize.y, upperLegSize.z, blanketColor);
+    scene = opSmoothUnion(upperLeg, scene, 0.2);
+
+    vec3 lowerLegSize = vec3(0.1, 0.1, 0.4);
+    SDF lowerLeg = sdfRoundedCylinder(p, vec3(-0.4, 0.1, -0.3) + blanketPos + globalPos, rotatez(1.6) * rotatey(1.3), lowerLegSize.x, lowerLegSize.y, lowerLegSize.z, blanketColor);
+    scene = opSmoothUnion(lowerLeg, scene, 0.1);
+
+    SDF headInBed = sdfSphere(p, vec3(-0.2, 0.1, 0.5) + blanketPos + globalPos, mat3(1.0), 0.2, blanketColor);
+    scene = opSmoothUnion(headInBed, scene, 0.1);
+    return scene;
+  } else {
+    float localtime = pc.time - pc.starttime;
+    if (pc.state == 5)
+    {
+      localtime = 0.0;
+    }
+    vec3 wallColor = vec3(2.0);
+    vec3 backWallPos = vec3(0.0, 0.0, 5.0);
+    vec3 backWallSize = vec3(4.0, 2.0, 0.1);
+    SDF backWall = sdfBox(p, backWallPos, mat3(1.0), backWallSize, wallColor);
+
+    vec3 sideWallPos = vec3(4.0 + smoothstep(0.0, 10.0, localtime) * 10.0, 0.0, 5.0);
+    vec3 sideWallSize = vec3(0.1, 2.0, 2.0);
+    vec3 sideWallp = p;
+    vec3 pivot = vec3(0.0, 0.0, 5.0);
+    sideWallp = pivot + rotatez(localtime / 4.0) * (sideWallp - pivot);
+    sideWallp.x = abs(sideWallp.x);
+    SDF sideWall = sdfBox(sideWallp, sideWallPos, mat3(1.0), sideWallSize, wallColor);
+
+    vec3 topWallPos = vec3(0.0, 1.9 + smoothstep(0.0, 10.0, localtime) * 10.0, 5.0);
+    vec3 topWallSize = vec3(4.0, 0.1, 2.0);
+    vec3 topWallp = p;
+    topWallp = pivot + rotatez(localtime / 4.0) * (topWallp - pivot);
+    SDF topWall = sdfBox(topWallp, topWallPos, mat3(1.0), topWallSize, wallColor);
+
+    vec3 floorPos = vec3(0.0, -1.9, 5.0);
+    vec3 floorSize = vec3(4.0, 0.1, 2.0);
+    SDF floors = sdfBox(p, floorPos, mat3(1.0), floorSize, wallColor);
+
+    SDF wall = opUnion(backWall, sideWall);
+    wall = opUnion(wall, topWall);
+    wall = opUnion(wall, floors);
+    SDF scene = wall;
+
+    SDF chair;
+    vec3 chairLegPos = vec3(0.5, -1.5, 4.0);
+    vec3 chairp = p;
+    chairp.x = abs(chairp.x);
+    chairp.z = abs(chairp.z - 3.8) + 3.8;
+    SDF chairLeg = sdfCappedCylinder(chairp, chairLegPos, mat3(1.0), 0.1, 0.5, wallColor);
+    chair = chairLeg;
+
+    vec3 seatPos = vec3(0.0, -1.0, 4.0);
+    vec3 seatSize = vec3(0.6, 0.1, 0.6);
+    SDF seat = sdfBox(p, seatPos, mat3(1.0), seatSize, wallColor);
+    chair = opUnion(seat, chair);
+
+    vec3 seatBackPos = vec3(0.0, 0.0, 4.0);
+    vec3 seatBackSize = vec3(0.6, 1.0, 0.1);
+    SDF seatBack = sdfBox(p, seatBackPos, mat3(1.0), seatBackSize, wallColor);
+    chair = opUnion(seatBack, chair);
+
+    scene = opUnion(scene, chair);
+    return scene;
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -495,14 +632,18 @@ void calcLighting(inout vec3 color, in vec3 p, in vec3 norm)
   vec3 indirectDir = normalize(-L * vec3(1.0, 0.0, 1.0));
   float indirectLighting = clamp(dot(norm, indirectDir), 0.0, 1.0);
 
-  vec3 lin = sunLighting * vec3(0.64, 0.27, 0.99)
+  vec3 lin = sunLighting * vec3(0.64, 0.67, 0.69)
       * pow(vec3(sha), vec3(1.0, 1.2, 1.5));
 
   lin += skyLighting * vec3(0.16, 0.20, 0.28) * occ;
   lin += indirectLighting * vec3(0.40, 0.28, 0.20) * occ;
 
   float distance = length(light.position - p);
-  float radius = 10.0;
+  float radius = 6.0 - abs(sin(pc.time * 0.5)) * 0.5;
+  if (pc.state >= 5)
+  {
+    radius += 2.0;
+  }
 
   float attenuation = 1.0 - smoothstep(0.0, radius, distance);
 
@@ -542,7 +683,7 @@ void draw(inout vec4 color, in RayInfo ray) {
     calcLighting(col, p, norm);
     color = vec4(col, 1.0);
   } else {
-    color = vec4(1.0, 1.0, 1.0, 1.0);
+    color = vec4(0.0, 0.0, 0.0, 1.0);
   }
 }
 
